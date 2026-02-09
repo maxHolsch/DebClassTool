@@ -4,7 +4,6 @@ import {
 	DefaultSizeStyle,
 	ErrorBoundary,
 	TLComponents,
-	TLShape,
 	TLUiOverrides,
 	Tldraw,
 	TldrawOverlays,
@@ -26,6 +25,7 @@ import {
 	createReadingDocument,
 	createReadingWorkspaceFile,
 	createWorkspaceFolder,
+	DEFAULT_READINGS_FOLDER_ID,
 	DEFAULT_SKETCHES_FOLDER_ID,
 	DeliberatoriumColor,
 	DeliberatoriumProfile,
@@ -83,11 +83,17 @@ const COLOR_SWATCHES: Record<DeliberatoriumColor, string> = {
 	violet: '#9b51e0',
 	orange: '#f2994a',
 }
+const PDF_URL_HASH = '#deliberatorium-pdf'
+
+function isPdfFile(file: File): boolean {
+	return file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+}
 
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
 	const [profile, setProfile] = useState<DeliberatoriumProfile | null>(null)
 	const [readings, setReadings] = useState<ReadingDocument[]>([])
+	const [readingPdfUrls, setReadingPdfUrls] = useState<Record<string, string>>({})
 	const [workspace, setWorkspace] = useState<WorkspaceState>({ folders: [], files: [] })
 	const [activeFileId, setActiveFileId] = useState<string | null>(null)
 	const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
@@ -109,7 +115,7 @@ function App() {
 		)
 		const missingReadingFiles = initialReadings
 			.filter((reading) => !readingIdsInWorkspace.has(reading.id))
-			.map((reading) => createReadingWorkspaceFile(reading, DEFAULT_SKETCHES_FOLDER_ID))
+			.map((reading) => createReadingWorkspaceFile(reading, DEFAULT_READINGS_FOLDER_ID))
 		if (missingReadingFiles.length > 0) {
 			initialWorkspace = {
 				...initialWorkspace,
@@ -120,10 +126,11 @@ function App() {
 
 		setWorkspace(initialWorkspace)
 		setActiveFileId(initialWorkspace.files[0]?.id ?? null)
-		setExpandedFolderIds({
-			[DEFAULT_SKETCHES_FOLDER_ID]: true,
-			'core-workspaces': true,
-		})
+			setExpandedFolderIds({
+				[DEFAULT_READINGS_FOLDER_ID]: true,
+				[DEFAULT_SKETCHES_FOLDER_ID]: true,
+				'core-workspaces': true,
+			})
 	}, [])
 
 	useEffect(() => {
@@ -249,17 +256,8 @@ function App() {
 	)
 
 	const activeWorkspaceLabel = useMemo(() => {
-		if (!activeFile) return 'Workspace'
-		const parts: string[] = [activeFile.name]
-		let currentParent = activeFile.parentId
-		while (currentParent) {
-			const folder = folderById.get(currentParent)
-			if (!folder) break
-			parts.unshift(folder.name)
-			currentParent = folder.parentId
-		}
-		return parts.join(' / ')
-	}, [activeFile, folderById])
+		return 'A new Deliberatorium'
+	}, [])
 
 	const activeWorkspaceSubtitle = useMemo(() => {
 		if (!activeFile) return 'Create or select a file in the explorer.'
@@ -274,6 +272,11 @@ function App() {
 		}
 		return 'Custom canvas file for ongoing group thinking.'
 	}, [activeFile])
+
+	const activeReadingPdfUrl = useMemo(() => {
+		if (!activeFile || activeFile.type !== 'reading' || !activeFile.readingId) return null
+		return readingPdfUrls[activeFile.readingId] ?? null
+	}, [activeFile, readingPdfUrls])
 
 	const recommendations = useMemo(() => {
 		const queryWords = liveTranscript
@@ -322,8 +325,15 @@ function App() {
 		async (event: ChangeEvent<HTMLInputElement>) => {
 			const file = event.target.files?.[0]
 			if (!file) return
-			const content = await readTextFromFile(file)
-			if (!content.trim()) {
+			const pdfUpload = isPdfFile(file)
+			let content = ''
+			if (pdfUpload) {
+				content = `PDF uploaded: ${file.name}`
+			} else {
+				content = await readTextFromFile(file)
+			}
+
+			if (!pdfUpload && !content.trim()) {
 				window.alert('Could not read text from this file. Upload a text-based file (.txt, .md, .json).')
 				event.target.value = ''
 				return
@@ -336,18 +346,22 @@ function App() {
 				return next
 			})
 
-			const readingFile = createReadingWorkspaceFile(reading, DEFAULT_SKETCHES_FOLDER_ID)
+			const readingFile = createReadingWorkspaceFile(reading, DEFAULT_READINGS_FOLDER_ID)
 			updateWorkspace((prev) => ({
 				...prev,
 				files: [...prev.files, readingFile],
 			}))
-			setExpandedFolderIds((prev) => ({ ...prev, [DEFAULT_SKETCHES_FOLDER_ID]: true }))
-			setSelectedFolderId(DEFAULT_SKETCHES_FOLDER_ID)
-			setActiveFileId(readingFile.id)
-			event.target.value = ''
-		},
-		[updateWorkspace]
-	)
+				setExpandedFolderIds((prev) => ({ ...prev, [DEFAULT_READINGS_FOLDER_ID]: true }))
+				setSelectedFolderId(DEFAULT_READINGS_FOLDER_ID)
+				setActiveFileId(readingFile.id)
+				if (pdfUpload) {
+					const pdfUrl = `${URL.createObjectURL(file)}${PDF_URL_HASH}`
+					setReadingPdfUrls((prev) => ({ ...prev, [reading.id]: pdfUrl }))
+				}
+				event.target.value = ''
+			},
+			[updateWorkspace]
+		)
 
 	const handleMapReading = useCallback(() => {
 		const agent = app?.agents.getAgent()
@@ -463,13 +477,22 @@ function App() {
 						/>
 					</aside>
 
-					<div className="tldraw-canvas deliberatorium-canvas">
-						<div className="deliberatorium-canvas-header">
-							<div>
-								<div className="canvas-title">{activeFile?.name ?? 'Workspace'}</div>
-								<div className="canvas-subtitle">{activeWorkspaceSubtitle}</div>
+						<div className="tldraw-canvas deliberatorium-canvas">
+							<div className="deliberatorium-canvas-header">
+								<div>
+									<div className="canvas-title">{activeFile?.name ?? 'Workspace'}</div>
+									<div className="canvas-subtitle">{activeWorkspaceSubtitle}</div>
+								</div>
+								{activeReadingPdfUrl && (
+									<button
+										className="btn-secondary"
+										type="button"
+										onClick={() => window.open(activeReadingPdfUrl, '_blank', 'noopener,noreferrer')}
+									>
+										Open PDF
+									</button>
+								)}
 							</div>
-						</div>
 						<Tldraw
 							key={canvasPersistenceKey}
 							persistenceKey={canvasPersistenceKey}
@@ -477,7 +500,7 @@ function App() {
 							overrides={overrides}
 							components={components}
 						>
-							<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
+								<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
 						</Tldraw>
 						<div className="deliberatorium-legend">
 							<div>
@@ -603,7 +626,7 @@ function ExplorerTree({
 						<span className="explorer-caret" onClick={() => onToggleFolder(folder.id)}>
 							{expanded ? '-' : '+'}
 						</span>
-						<span>[DIR] {folder.name}</span>
+						<span>[dir] {folder.name}</span>
 					</button>
 				</div>
 			)

@@ -41,6 +41,7 @@ const READING_KEY = 'deliberatorium.readings.v1'
 const WORKSPACE_KEY = 'deliberatorium.workspace.v1'
 
 export const DEFAULT_CORE_FOLDER_ID = 'core-workspaces'
+export const DEFAULT_READINGS_FOLDER_ID = 'readings'
 export const DEFAULT_SKETCHES_FOLDER_ID = 'sketches'
 
 const MAX_READING_CHARS = 18000
@@ -55,6 +56,12 @@ function createDefaultWorkspaceState(): WorkspaceState {
 			{
 				id: DEFAULT_CORE_FOLDER_ID,
 				name: 'Core Workspaces',
+				parentId: null,
+				createdAt: Date.now(),
+			},
+			{
+				id: DEFAULT_READINGS_FOLDER_ID,
+				name: 'Readings',
 				parentId: null,
 				createdAt: Date.now(),
 			},
@@ -135,7 +142,8 @@ export function loadWorkspaceState(): WorkspaceState {
 		const folders = parsed.folders.filter((folder) => folder?.id && folder?.name)
 		const files = parsed.files.filter((file) => file?.id && file?.name && file?.canvasKey)
 		const hasCore = folders.some((folder) => folder.id === DEFAULT_CORE_FOLDER_ID)
-		const hasSketches = folders.some((folder) => folder.id === DEFAULT_SKETCHES_FOLDER_ID)
+		const hasReadingsFolder = folders.some((folder) => folder.id === DEFAULT_READINGS_FOLDER_ID)
+		const hasSketchesFolder = folders.some((folder) => folder.id === DEFAULT_SKETCHES_FOLDER_ID)
 		const hasWeekly = files.some((file) => file.id === 'weekly-prep')
 		const hasQuestion = files.some((file) => file.id === 'question-space')
 
@@ -152,7 +160,15 @@ export function loadWorkspaceState(): WorkspaceState {
 				createdAt: Date.now(),
 			})
 		}
-		if (!hasSketches) {
+		if (!hasReadingsFolder) {
+			next.folders.push({
+				id: DEFAULT_READINGS_FOLDER_ID,
+				name: 'Readings',
+				parentId: null,
+				createdAt: Date.now(),
+			})
+		}
+		if (!hasSketchesFolder) {
 			next.folders.push({
 				id: DEFAULT_SKETCHES_FOLDER_ID,
 				name: 'Sketches',

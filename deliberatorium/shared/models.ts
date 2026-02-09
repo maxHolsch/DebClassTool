@@ -25,6 +25,12 @@ export const AGENT_MODEL_DEFINITIONS = {
 		provider: 'anthropic',
 	},
 
+	'claude-opus-4-6': {
+		name: 'claude-opus-4-6',
+		id: 'claude-opus-4-6',
+		provider: 'anthropic',
+	},
+
 	// Google models
 	'gemini-3-pro-preview': {
 		name: 'gemini-3-pro-preview',

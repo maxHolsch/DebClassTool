@@ -1779,7 +1779,6 @@ body {
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	color: var(--ccc-gray);
-	background: var(--ccc-blue-soft);
 	border: 1px solid var(--ccc-border);
 }
 
