@@ -1662,3 +1662,252 @@ body {
 		border-radius: 14px;
 	}
 }
+
+/* CCC MIT reskin */
+@font-face {
+	font-family: 'Suisse Intl Mono';
+	src: url('/ccc/fonts/SuisseIntlMono.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Haas Grot Disp R 75';
+	src: url('/ccc/fonts/HaasGrotDispR-75Bold.woff2') format('woff2');
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Haas Grot Text';
+	src: url('/ccc/fonts/HaasGrotTextR-55Roman.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Haas Grot Text';
+	src: url('/ccc/fonts/HaasGrotTextR-75Bold.woff2') format('woff2');
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+
+:root {
+	--ccc-blue: #007bb0;
+	--ccc-blue-soft: #e6f0fa;
+	--ccc-gray: #000000;
+	--ccc-border: #cdd7e1;
+	--ccc-bg: #f5faff;
+	--ccc-white: #ffffff;
+	--ccc-text: #000000;
+}
+
+body {
+	font-family: 'Haas Grot Text', 'Helvetica Neue', Arial, sans-serif;
+	color: var(--ccc-text);
+	background-image: url('/ccc/backgrounds/background_desktop2.png');
+	background-size: cover;
+	background-position: center;
+	background-attachment: fixed;
+}
+
+@media (max-width: 991px) {
+	body {
+		background-image: url('/ccc/backgrounds/background_tablet2.png');
+	}
+}
+
+@media (max-width: 767px) {
+	body {
+		background-image: url('/ccc/backgrounds/background_mobile2.png');
+	}
+}
+
+.deliberatorium-shell {
+	background: rgba(255, 255, 255, 0.9);
+	backdrop-filter: blur(3px);
+}
+
+.deliberatorium-topbar {
+	background: var(--ccc-white);
+	border-bottom: 1px solid var(--ccc-border);
+}
+
+.deliberatorium-brand-wrap {
+	gap: 12px;
+}
+
+.deliberatorium-brand {
+	gap: 10px;
+}
+
+.brand-logo {
+	height: 34px;
+	width: auto;
+	display: block;
+}
+
+.brand-mit-logo {
+	height: 28px;
+	width: auto;
+	display: block;
+}
+
+.brand-copy {
+	gap: 0;
+}
+
+.brand-title {
+	font-family: 'Haas Grot Disp R 75', 'Helvetica Neue', Arial, sans-serif;
+	font-size: 20px;
+	line-height: 1.1;
+}
+
+.brand-subtitle {
+	font-family: 'Suisse Intl Mono', 'Courier New', monospace;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--ccc-gray);
+}
+
+.deliberatorium-current-file {
+	font-family: 'Suisse Intl Mono', 'Courier New', monospace;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--ccc-gray);
+	background: var(--ccc-blue-soft);
+	border: 1px solid var(--ccc-border);
+}
+
+.deliberatorium-explorer,
+.deliberatorium-canvas,
+.chat-panel {
+	background: var(--ccc-white);
+	border-color: var(--ccc-border);
+}
+
+.explorer-header strong,
+.canvas-title,
+.chat-header-title {
+	font-family: 'Haas Grot Disp R 75', 'Helvetica Neue', Arial, sans-serif;
+	font-weight: 700;
+}
+
+.canvas-subtitle,
+.chat-header-subtitle,
+.deliberatorium-status {
+	color: var(--ccc-gray);
+}
+
+.explorer-actions button,
+.deliberatorium-actions button,
+.chat-input-submit {
+	font-family: 'Suisse Intl Mono', 'Courier New', monospace;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.deliberatorium-actions .btn-secondary {
+	border: none;
+	background: var(--ccc-blue-soft);
+	color: var(--ccc-gray);
+}
+
+.deliberatorium-actions .btn-primary,
+.chat-input-submit {
+	background: var(--ccc-blue);
+	color: var(--ccc-white);
+	border: none;
+}
+
+.deliberatorium-actions .btn-secondary:hover {
+	background: #d8e7f6;
+	color: #5f6973;
+}
+
+.deliberatorium-actions .btn-primary:hover,
+.chat-input-submit:hover {
+	background: #00638f;
+}
+
+.deliberatorium-legend {
+	background: var(--ccc-bg);
+	border-top: 1px solid var(--ccc-border);
+	font-family: 'Suisse Intl Mono', 'Courier New', monospace;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.chat-header {
+	border-bottom: 1px solid var(--ccc-border);
+}
+
+.chat-history-prompt,
+.agent-changes,
+.chat-input form,
+.recommender-card,
+.recommender-popout textarea {
+	background: var(--ccc-bg);
+	border: 1px solid var(--ccc-border);
+	box-shadow: none;
+}
+
+.prompt-tag,
+.chat-model-select,
+.chat-context-select {
+	border-color: var(--ccc-border);
+	color: var(--ccc-gray);
+}
+
+.prompt-tag:hover,
+.chat-model-select:hover,
+.chat-context-select:hover {
+	border-color: var(--ccc-blue);
+	color: var(--ccc-blue);
+}
+
+.recommender-tag {
+	font-family: 'Suisse Intl Mono', 'Courier New', monospace;
+	text-transform: uppercase;
+}
+
+@media (max-width: 1200px) {
+	.brand-mit-logo {
+		display: none;
+	}
+}
+
+/* Readability override: black text in app chrome only (do not affect tldraw UI) */
+.deliberatorium-topbar,
+.deliberatorium-topbar *:not(button),
+.deliberatorium-current-file,
+.deliberatorium-explorer,
+.deliberatorium-explorer *,
+.deliberatorium-status,
+.chat-panel,
+.chat-panel *:not(.chat-input-submit),
+.recommender-popout,
+.recommender-popout * {
+	color: #000;
+}
+
+.chat-panel {
+	--tl-color-text: #000;
+	--tl-color-text-1: #000;
+	--tl-color-text-2: #000;
+	--tl-color-text-3: #000;
+}
+
+.chat-panel input::placeholder,
+.chat-panel textarea::placeholder {
+	color: rgba(0, 0, 0, 0.65);
+}
+
+.chat-input-submit,
+.deliberatorium-actions .btn-primary {
+	color: #fff;
+}

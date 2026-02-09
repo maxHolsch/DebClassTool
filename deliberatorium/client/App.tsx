@@ -401,12 +401,13 @@ function App() {
 				<header className="deliberatorium-topbar">
 					<div className="deliberatorium-brand-wrap">
 						<div className="deliberatorium-brand">
-							<div className="brand-mark" />
+							<img className="brand-logo" src="/ccc/assets/logoCCC.svg" alt="Center for Constructive Communication" />
 							<div className="brand-copy">
 								<span className="brand-title">Deliberatorium</span>
-								<span className="brand-subtitle">Collaborative Sensemaking</span>
+								<span className="brand-subtitle">Constructive Communication Workspace</span>
 							</div>
 						</div>
+						<img className="brand-mit-logo" src="/ccc/assets/mit_logo_std_rgb_silver-gray.svg" alt="MIT" />
 					</div>
 					<div className="deliberatorium-current-file" title={activeWorkspaceLabel}>
 						{activeWorkspaceLabel}
