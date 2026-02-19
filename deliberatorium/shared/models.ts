@@ -12,10 +12,19 @@ export interface AgentModelDefinition {
 
 export const AGENT_MODEL_DEFINITIONS = {
 	// Anthropic models
+	// Official Anthropic API model names (latest):
+	// https://www.anthropic.com/claude/sonnet
+	// https://www.anthropic.com/news/claude-opus-4-6
 	// sonnet 4.5 is recommended
 	'claude-sonnet-4-5': {
 		name: 'claude-sonnet-4-5',
 		id: 'claude-sonnet-4-5',
+		provider: 'anthropic',
+	},
+
+	'claude-sonnet-4-6': {
+		name: 'claude-sonnet-4-6',
+		id: 'claude-sonnet-4-6',
 		provider: 'anthropic',
 	},
 

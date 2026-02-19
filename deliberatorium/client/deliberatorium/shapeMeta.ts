@@ -36,7 +36,7 @@ export function sanitizeShapeMeta(meta: unknown): Record<string, unknown> {
 export function createAiMeta(): DeliberatoriumShapeMeta {
 	return {
 		source: 'ai',
-		author: 'Deliberatorium Agent',
+		author: 'Dialectica Agent',
 		timestamp: Date.now(),
 	}
 }

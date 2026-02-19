@@ -3,10 +3,12 @@ import { useAgent } from '../agent/TldrawAgentAppProvider'
 import { ChatHistory } from './chat-history/ChatHistory'
 import { ChatInput } from './ChatInput'
 import { TodoList } from './TodoList'
+import { useAssemblyAiAgentNotecards } from './useAssemblyAiAgentNotecards'
 
 export function ChatPanel() {
 	const agent = useAgent()
 	const inputRef = useRef<HTMLTextAreaElement>(null)
+	const realtimeNotes = useAssemblyAiAgentNotecards(agent)
 
 	const handleSubmit = useCallback<FormEventHandler<HTMLFormElement>>(
 		async (e) => {
@@ -51,6 +53,30 @@ export function ChatPanel() {
 				<button className="new-chat-button" onClick={handleNewChat}>
 					New Chat
 				</button>
+			</div>
+			<div className="chat-realtime-panel">
+				<div className="chat-realtime-top">
+					<div>
+						<div className="chat-realtime-title">Live Notecards</div>
+						<div className="chat-realtime-status">Status: {realtimeNotes.status}</div>
+					</div>
+					{realtimeNotes.isListening ? (
+						<button className="chat-realtime-button stop" onClick={realtimeNotes.stop}>
+							Stop Mic
+						</button>
+					) : (
+						<button className="chat-realtime-button start" onClick={() => void realtimeNotes.start()}>
+							Start Mic
+						</button>
+					)}
+				</div>
+				{realtimeNotes.error && <div className="chat-realtime-error">{realtimeNotes.error}</div>}
+				{realtimeNotes.liveTranscript && (
+					<div className="chat-realtime-live">Live: {realtimeNotes.liveTranscript}</div>
+				)}
+				{realtimeNotes.lastTurnSummary && (
+					<div className="chat-realtime-last-turn">Last turn: {realtimeNotes.lastTurnSummary}</div>
+				)}
 			</div>
 			<ChatHistory agent={agent} />
 			<div className="chat-input-container">
