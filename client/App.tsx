@@ -1,3 +1,4 @@
+import { useSync } from '@tldraw/sync'
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	DefaultColorStyle,
@@ -20,6 +21,7 @@ import { CustomHelperButtons } from './components/CustomHelperButtons'
 import { AgentViewportBoundsHighlights } from './components/highlights/AgentViewportBoundsHighlights'
 import { AllContextHighlights } from './components/highlights/ContextHighlights'
 import { createHumanMeta, sanitizeShapeMeta } from './deliberatorium/shapeMeta'
+import { createMultiplayerAssetStore } from './multiplayerAssetStore'
 import {
 	createCanvasWorkspaceFile,
 	createReadingDocument,
@@ -73,7 +75,7 @@ const overrides: TLUiOverrides = {
 	},
 }
 
-const CLASS_PASSWORD = import.meta.env.VITE_CLASS_PASSWORD ?? 'deliberatorium'
+const CLASS_PASSWORD = import.meta.env.VITE_CLASS_PASSWORD ?? 'dialectica'
 const COLOR_OPTIONS: DeliberatoriumColor[] = ['yellow', 'blue', 'green', 'red', 'violet', 'orange']
 const COLOR_SWATCHES: Record<DeliberatoriumColor, string> = {
 	yellow: '#f2c94c',
@@ -84,6 +86,14 @@ const COLOR_SWATCHES: Record<DeliberatoriumColor, string> = {
 	orange: '#f2994a',
 }
 const PDF_URL_HASH = '#deliberatorium-pdf'
+const SYNC_DEBUG =
+	import.meta.env.VITE_SYNC_DEBUG !== '0' && import.meta.env.VITE_SYNC_DEBUG !== 'false'
+
+function getSyncUri(roomId: string): string {
+	return `${window.location.origin}/connect/${roomId}`
+}
+
+const multiplayerAssets = createMultiplayerAssetStore()
 
 function isPdfFile(file: File): boolean {
 	return file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
@@ -256,7 +266,7 @@ function App() {
 	)
 
 	const activeWorkspaceLabel = useMemo(() => {
-		return 'A new Deliberatorium'
+		return ''
 	}, [])
 
 	const activeWorkspaceSubtitle = useMemo(() => {
@@ -417,7 +427,7 @@ function App() {
 						<div className="deliberatorium-brand">
 							<img className="brand-logo" src="/ccc/assets/logoCCC.svg" alt="Center for Constructive Communication" />
 							<div className="brand-copy">
-								<span className="brand-title">Deliberatorium</span>
+								<span className="brand-title">Dialectica</span>
 								<span className="brand-subtitle">Constructive Communication Workspace</span>
 							</div>
 						</div>
@@ -493,25 +503,25 @@ function App() {
 									</button>
 								)}
 							</div>
-						<Tldraw
+						<SyncedTldraw
 							key={canvasPersistenceKey}
-							persistenceKey={canvasPersistenceKey}
+							roomId={canvasPersistenceKey}
 							tools={tools}
 							overrides={overrides}
 							components={components}
-						>
-								<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
-						</Tldraw>
-						<div className="deliberatorium-legend">
-							<div>
-								<span className="legend-chip" style={{ background: '#f2c94c' }} /> AI first pass
-							</div>
-							<div>
-								<span className="legend-chip" style={{ background: COLOR_SWATCHES[profile.color] }} />{' '}
-								{profile.name}
+							onMount={setApp}
+							onUnmount={handleUnmount}
+						/>
+							<div className="deliberatorium-legend">
+								<div>
+									<span className="legend-chip" style={{ background: '#f2c94c' }} /> AI first pass
+								</div>
+								<div>
+									<span className="legend-chip" style={{ background: COLOR_SWATCHES[profile.color] }} />{' '}
+									{profile.name}
+								</div>
 							</div>
 						</div>
-					</div>
 
 					<ErrorBoundary fallback={ChatPanelFallback}>
 						{app && (
@@ -523,7 +533,7 @@ function App() {
 				</div>
 
 				<footer className="deliberatorium-status">
-					<div>4 collaborators online</div>
+					<div>Synced (multiplayer)</div>
 					<div>Last saved {lastSavedLabel}</div>
 					<div>{readings.length} readings indexed</div>
 				</footer>
@@ -561,6 +571,178 @@ function App() {
 				)}
 			</div>
 		</TldrawUiToastsProvider>
+	)
+}
+
+function SyncedTldraw({
+	roomId,
+	tools: syncTools,
+	overrides: syncOverrides,
+	components: syncComponents,
+	onMount,
+	onUnmount,
+}: {
+	roomId: string
+	tools: typeof tools
+	overrides: TLUiOverrides
+	components: TLComponents
+	onMount: (app: TldrawAgentApp) => void
+	onUnmount: () => void
+}) {
+	const [retryAttempt, setRetryAttempt] = useState(0)
+
+	return (
+		<SyncedTldrawInner
+			key={`${roomId}:${retryAttempt}`}
+			roomId={roomId}
+			tools={syncTools}
+			overrides={syncOverrides}
+			components={syncComponents}
+			onMount={onMount}
+			onUnmount={onUnmount}
+			onSyncFatal={() => setRetryAttempt((prev) => prev + 1)}
+		/>
+	)
+}
+
+function SyncedTldrawInner({
+	roomId,
+	tools: syncTools,
+	overrides: syncOverrides,
+	components: syncComponents,
+	onMount,
+	onUnmount,
+	onSyncFatal,
+}: {
+	roomId: string
+	tools: typeof tools
+	overrides: TLUiOverrides
+	components: TLComponents
+	onMount: (app: TldrawAgentApp) => void
+	onUnmount: () => void
+	onSyncFatal: () => void
+}) {
+	const syncUri = useMemo(() => getSyncUri(roomId), [roomId])
+	const lastSyncStateRef = useRef<string | null>(null)
+	const didScheduleRetryRef = useRef(false)
+	const trackSyncAnalyticsEvent = useCallback(
+		(eventName: string, payload: Record<string, unknown>) => {
+			if (!SYNC_DEBUG) return
+			console.info('[sync][analytics]', { eventName, roomId, payload })
+		},
+		[roomId]
+	)
+
+	const store = useSync({
+		uri: syncUri,
+		roomId,
+		assets: multiplayerAssets,
+		trackAnalyticsEvent: trackSyncAnalyticsEvent,
+	})
+
+	useEffect(() => {
+		if (store.status !== 'error') return
+		if (didScheduleRetryRef.current) return
+		didScheduleRetryRef.current = true
+		console.warn('[sync][retry]', { roomId, afterMs: 1200 })
+		const timeout = window.setTimeout(() => {
+			onSyncFatal()
+		}, 1200)
+		return () => window.clearTimeout(timeout)
+	}, [onSyncFatal, roomId, store.status])
+
+	useEffect(() => {
+		if (!SYNC_DEBUG) return
+
+		const syncState = JSON.stringify({
+			roomId,
+			uri: syncUri,
+			status: store.status,
+			connectionStatus: 'connectionStatus' in store ? store.connectionStatus : null,
+			error:
+				'error' in store
+					? {
+							name: store.error?.name,
+							message: store.error?.message,
+					  }
+					: null,
+		})
+
+		if (syncState === lastSyncStateRef.current) return
+		lastSyncStateRef.current = syncState
+		console.info('[sync][state]', JSON.parse(syncState))
+	}, [roomId, store, syncUri])
+
+	useEffect(() => {
+		if (!SYNC_DEBUG) return
+		console.info('[canvas][lifecycle] SyncedTldrawInner mounted', { roomId })
+		return () => {
+			console.warn('[canvas][lifecycle] SyncedTldrawInner unmounted', { roomId })
+		}
+	}, [roomId])
+
+	useEffect(() => {
+		if (!SYNC_DEBUG) return
+		const canvasHost = document.querySelector('.deliberatorium-canvas') as HTMLElement | null
+		const tlContainer = canvasHost?.querySelector('.tl-container') as HTMLElement | null
+		if (!canvasHost || !tlContainer) {
+			console.warn('[canvas][dom] missing canvas host or tldraw container', { roomId })
+			return
+		}
+
+		const logLayout = (source: string) => {
+			const hostRect = canvasHost.getBoundingClientRect()
+			const containerRect = tlContainer.getBoundingClientRect()
+			const hostStyle = window.getComputedStyle(canvasHost)
+			const containerStyle = window.getComputedStyle(tlContainer)
+			console.info('[canvas][dom]', {
+				source,
+				roomId,
+				host: {
+					w: Math.round(hostRect.width),
+					h: Math.round(hostRect.height),
+					display: hostStyle.display,
+					visibility: hostStyle.visibility,
+					opacity: hostStyle.opacity,
+				},
+				container: {
+					w: Math.round(containerRect.width),
+					h: Math.round(containerRect.height),
+					display: containerStyle.display,
+					visibility: containerStyle.visibility,
+					opacity: containerStyle.opacity,
+				},
+			})
+		}
+
+		logLayout('init')
+		const resizeObserver = new ResizeObserver(() => logLayout('resize'))
+		resizeObserver.observe(canvasHost)
+		resizeObserver.observe(tlContainer)
+
+		const mutationObserver = new MutationObserver(() => logLayout('mutation'))
+		mutationObserver.observe(canvasHost, { attributes: true, attributeFilter: ['class', 'style'] })
+		mutationObserver.observe(tlContainer, { attributes: true, attributeFilter: ['class', 'style'] })
+
+		const interval = window.setInterval(() => logLayout('interval'), 4000)
+
+		return () => {
+			window.clearInterval(interval)
+			mutationObserver.disconnect()
+			resizeObserver.disconnect()
+		}
+	}, [roomId])
+
+	return (
+		<Tldraw
+			licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
+			store={store}
+			tools={syncTools}
+			overrides={syncOverrides}
+			components={syncComponents}
+		>
+			<TldrawAgentAppProvider onMount={onMount} onUnmount={onUnmount} />
+		</Tldraw>
 	)
 }
 
@@ -680,7 +862,7 @@ function AuthGate({ onSubmit }: { onSubmit: (profile: DeliberatoriumProfile) => 
 	return (
 		<div className="auth-gate">
 			<form className="auth-card" onSubmit={handleSubmit}>
-				<h1>The Deliberatorium</h1>
+				<h1>The Dialectica</h1>
 				<p>Enter the class password, your display name, and your annotation color.</p>
 				<label>
 					Class Password

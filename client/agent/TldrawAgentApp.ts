@@ -32,8 +32,14 @@ export class TldrawAgentApp {
 	/**
 	 * Handle crash and dispose events.
 	 */
-	private handleCrash = () => this.dispose()
-	private handleDispose = () => this.dispose()
+	private handleCrash = () => {
+		console.error('[editor][lifecycle] crash event')
+		this.dispose()
+	}
+	private handleDispose = () => {
+		console.warn('[editor][lifecycle] dispose event')
+		this.dispose()
+	}
 
 	private _editor: Editor | null
 
@@ -66,6 +72,7 @@ export class TldrawAgentApp {
 	 */
 	dispose() {
 		if (!this._editor) return
+		console.warn('[editor][lifecycle] disposing app instance')
 		this._editor.off('crash', this.handleCrash)
 		this._editor.off('dispose', this.handleDispose)
 		this.persistence.dispose()

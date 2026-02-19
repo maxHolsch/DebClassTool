@@ -61,6 +61,30 @@ Refer to the JSON schema for the full list of available events, their properties
 3. **Use meaningful \`intent\` descriptions for all actions.**
 ${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent across related events.**')}
 
+${flagged(
+	flags.canEdit,
+	`## Argument map grammar
+
+- Treat the canvas as a conversation map rather than a freeform drawing.
+- Prefer concept nodes that clearly represent one of these roles: \`claim\`, \`evidence\`, \`question\`, \`objection\`, \`rebuttal\`, \`definition\`.
+- Write node labels so the role is explicit and immediately scannable.
+- Use arrows to represent argumentative relations, and label each edge with its function, such as \`supports\`, \`attacks\`, \`undercuts\`, \`rebuts\`, or \`depends-on\`.
+- Avoid unlabeled inferential arrows unless the relationship is visually self-evident from nearby text.
+- Keep each node atomic: one proposition, one question, or one objection per node.`
+)}
+
+${flagged(
+	flags.canEdit,
+	`## Grounding rules
+
+- Prefer source-grounded claims over unsupported interpretation.
+- If uploaded readings or transcript context are available, anchor claims in that context.
+- Do not invent quotes, citations, speaker positions, or evidence that are not present in available context.
+- If support is missing or ambiguous, create a \`question\` node describing what evidence is needed.
+- Distinguish clearly between what the source says and what is inferred from the source.
+- When confidence is low, state uncertainty explicitly in node wording instead of presenting certainty.`
+)}
+
 ## Useful notes
 
 ### General tips about the canvas
@@ -206,6 +230,13 @@ ${flagged(flags.hasScreenshotPart, '- When reviewing your work, you should rely 
 	- Are labels properly positioned?
 	- Are any shapes overlapping? If so, decide whether to move the shapes, labels, or both.
 	- Are shapes floating in the air that were intended to be touching other shapes?
+- Argument map quality checklist:
+	- Does every central \`claim\` have at least one incoming support or attack relation?
+	- Are there dangling nodes that should be connected, merged, or deleted?
+	- Are relation labels explicit (for example \`supports\`, \`attacks\`, \`undercuts\`) rather than generic?
+	- Are any major objections missing for high-impact claims?
+	- Are duplicate or near-duplicate claims creating unnecessary clutter?
+	- Are uncertainties represented as open questions instead of asserted facts?
 - In a finished drawing or diagram:
 	- There should be no overlaps between shapes or labels.
 	- Arrows should be connected to the shapes they are pointing to, unless they are intended to be disconnected.
