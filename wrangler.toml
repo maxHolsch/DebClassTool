@@ -13,6 +13,7 @@ enabled = true
 bindings = [
     { name = "AGENT_DURABLE_OBJECT", class_name = "AgentDurableObject" },
     { name = "SYNC_DURABLE_OBJECT", class_name = "TldrawSyncDurableObject" },
+    { name = "WORKSPACE_STATE_DURABLE_OBJECT", class_name = "WorkspaceStateDurableObject" },
 ]
 
 # R2 bucket for asset uploads (images/media)
@@ -26,3 +27,7 @@ preview_bucket_name = "deliberatorium-assets-preview"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AgentDurableObject", "TldrawSyncDurableObject"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["WorkspaceStateDurableObject"]

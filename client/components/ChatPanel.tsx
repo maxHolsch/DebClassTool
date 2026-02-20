@@ -1,14 +1,16 @@
-import { FormEventHandler, useCallback, useRef } from 'react'
+import { FormEventHandler, useCallback, useRef, useState } from 'react'
 import { useAgent } from '../agent/TldrawAgentAppProvider'
 import { ChatHistory } from './chat-history/ChatHistory'
 import { ChatInput } from './ChatInput'
 import { TodoList } from './TodoList'
 import { useAssemblyAiAgentNotecards } from './useAssemblyAiAgentNotecards'
+import type { RealtimeMappingService } from './useAssemblyAiAgentNotecards'
 
 export function ChatPanel() {
 	const agent = useAgent()
 	const inputRef = useRef<HTMLTextAreaElement>(null)
-	const realtimeNotes = useAssemblyAiAgentNotecards(agent)
+	const [realtimeService, setRealtimeService] = useState<RealtimeMappingService>('live-notecards')
+	const realtimeNotes = useAssemblyAiAgentNotecards(agent, { service: realtimeService })
 
 	const handleSubmit = useCallback<FormEventHandler<HTMLFormElement>>(
 		async (e) => {
@@ -57,8 +59,23 @@ export function ChatPanel() {
 			<div className="chat-realtime-panel">
 				<div className="chat-realtime-top">
 					<div>
-						<div className="chat-realtime-title">Live Notecards</div>
+						<div className="chat-realtime-title">
+							{realtimeService === 'question-flowers' ? 'Question Flowers' : 'Live Notecards'}
+						</div>
 						<div className="chat-realtime-status">Status: {realtimeNotes.status}</div>
+						<div className="chat-realtime-service">
+							<label htmlFor="realtime-service-select">Service</label>
+							<select
+								id="realtime-service-select"
+								value={realtimeService}
+								onChange={(event) =>
+									setRealtimeService(event.target.value as RealtimeMappingService)
+								}
+							>
+								<option value="live-notecards">Live Notecards</option>
+								<option value="question-flowers">Question Flowers</option>
+							</select>
+						</div>
 					</div>
 					{realtimeNotes.isListening ? (
 						<button className="chat-realtime-button stop" onClick={realtimeNotes.stop}>
@@ -71,6 +88,11 @@ export function ChatPanel() {
 					)}
 				</div>
 				{realtimeNotes.error && <div className="chat-realtime-error">{realtimeNotes.error}</div>}
+				{realtimeService === 'question-flowers' && realtimeNotes.activeQuestionLabel && (
+					<div className="chat-realtime-last-turn">
+						Active question: {realtimeNotes.activeQuestionLabel}
+					</div>
+				)}
 				{realtimeNotes.liveTranscript && (
 					<div className="chat-realtime-live">Live: {realtimeNotes.liveTranscript}</div>
 				)}

@@ -17,6 +17,28 @@ const router = AutoRouter<IRequest, [env: Environment, ctx: ExecutionContext]>({
 })
 	.post('/stream', stream)
 	.get('/assemblyai/token', assemblyAiToken)
+	.get('/workspace/:scope', async (request, env) => {
+		const scope = request.params.scope ?? 'default'
+		const id = env.WORKSPACE_STATE_DURABLE_OBJECT.idFromName(scope)
+		const workspace = env.WORKSPACE_STATE_DURABLE_OBJECT.get(id)
+		return workspace.fetch('https://workspace.internal/state', {
+			method: 'GET',
+		})
+	})
+	.put('/workspace/:scope', async (request, env) => {
+		const scope = request.params.scope ?? 'default'
+		const id = env.WORKSPACE_STATE_DURABLE_OBJECT.idFromName(scope)
+		const workspace = env.WORKSPACE_STATE_DURABLE_OBJECT.get(id)
+		const body = await (request as unknown as Request).arrayBuffer()
+		const headers = new Headers()
+		const contentType = (request as unknown as Request).headers.get('content-type')
+		if (contentType) headers.set('content-type', contentType)
+		return workspace.fetch('https://workspace.internal/state', {
+			method: 'PUT',
+			headers,
+			body,
+		})
+	})
 	.post('/assets/:uploadId', async (request, env) => {
 		const key = request.params.uploadId
 		const body = await (request as unknown as Request).arrayBuffer()
@@ -69,3 +91,4 @@ export default class extends WorkerEntrypoint<Environment> {
 // Make the durable objects available to the cloudflare worker
 export { AgentDurableObject } from './do/AgentDurableObject'
 export { TldrawSyncDurableObject } from './do/TldrawSyncDurableObject'
+export { WorkspaceStateDurableObject } from './do/WorkspaceStateDurableObject'

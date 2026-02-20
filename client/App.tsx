@@ -31,14 +31,21 @@ import {
 	DEFAULT_SKETCHES_FOLDER_ID,
 	DeliberatoriumColor,
 	DeliberatoriumProfile,
+	ensureReadingFilesInWorkspace,
+	getWorkspaceSnapshotFingerprint,
+	loadSharedWorkspaceSnapshot,
 	loadProfile,
 	loadReadings,
 	loadWorkspaceState,
+	mergeReadings,
+	mergeWorkspaceStates,
 	readTextFromFile,
 	ReadingDocument,
 	saveProfile,
 	saveReadings,
+	saveSharedWorkspaceSnapshot,
 	saveWorkspaceState,
+	SHARED_WORKSPACE_POLL_INTERVAL_MS,
 	WorkspaceFile,
 	WorkspaceFolder,
 	WorkspaceState,
@@ -112,35 +119,149 @@ function App() {
 	const [liveTranscript, setLiveTranscript] = useState('')
 	const [lastSavedAt, setLastSavedAt] = useState<number>(Date.now())
 	const fileInputRef = useRef<HTMLInputElement>(null)
+	const workspaceRef = useRef<WorkspaceState>({ folders: [], files: [] })
+	const readingsRef = useRef<ReadingDocument[]>([])
+	const sharedRevisionRef = useRef(0)
+	const snapshotFingerprintRef = useRef('')
+	const activeFileIdRef = useRef<string | null>(null)
+
+	useEffect(() => {
+		activeFileIdRef.current = activeFileId
+	}, [activeFileId])
+
+	const persistSnapshot = useCallback((nextWorkspaceInput: WorkspaceState, nextReadingsInput: ReadingDocument[]) => {
+		const nextReadings = [...nextReadingsInput]
+		const nextWorkspace = ensureReadingFilesInWorkspace(nextWorkspaceInput, nextReadings)
+		const nextFingerprint = getWorkspaceSnapshotFingerprint(nextWorkspace, nextReadings)
+		workspaceRef.current = nextWorkspace
+		readingsRef.current = nextReadings
+		snapshotFingerprintRef.current = nextFingerprint
+		saveWorkspaceState(nextWorkspace)
+		saveReadings(nextReadings)
+
+		void saveSharedWorkspaceSnapshot({
+			workspace: nextWorkspace,
+			readings: nextReadings,
+			knownRevision: sharedRevisionRef.current,
+		}).then((saved) => {
+			if (!saved) return
+			sharedRevisionRef.current = saved.revision
+			const savedFingerprint = getWorkspaceSnapshotFingerprint(saved.workspace, saved.readings)
+			if (savedFingerprint === snapshotFingerprintRef.current) return
+			snapshotFingerprintRef.current = savedFingerprint
+			workspaceRef.current = saved.workspace
+			readingsRef.current = saved.readings
+			setWorkspace(saved.workspace)
+			setReadings(saved.readings)
+			if (!saved.workspace.files.some((file) => file.id === activeFileIdRef.current)) {
+				setActiveFileId(saved.workspace.files[0]?.id ?? null)
+			}
+		})
+
+		return { workspace: nextWorkspace, readings: nextReadings }
+	}, [])
 
 	useEffect(() => {
 		setProfile(loadProfile())
+		let cancelled = false
+		const localReadings = loadReadings()
+		const localWorkspace = ensureReadingFilesInWorkspace(loadWorkspaceState(), localReadings)
 
-		const initialReadings = loadReadings()
-		setReadings(initialReadings)
+		const initialize = async () => {
+			let nextReadings = localReadings
+			let nextWorkspace = localWorkspace
+			const remote = await loadSharedWorkspaceSnapshot()
+			if (cancelled) return
 
-		let initialWorkspace = loadWorkspaceState()
-		const readingIdsInWorkspace = new Set(
-			initialWorkspace.files.filter((file) => file.type === 'reading').map((file) => file.readingId)
-		)
-		const missingReadingFiles = initialReadings
-			.filter((reading) => !readingIdsInWorkspace.has(reading.id))
-			.map((reading) => createReadingWorkspaceFile(reading, DEFAULT_READINGS_FOLDER_ID))
-		if (missingReadingFiles.length > 0) {
-			initialWorkspace = {
-				...initialWorkspace,
-				files: [...initialWorkspace.files, ...missingReadingFiles],
+			if (remote) {
+				sharedRevisionRef.current = remote.revision
+				nextReadings = mergeReadings(remote.readings, localReadings)
+				nextWorkspace = ensureReadingFilesInWorkspace(
+					mergeWorkspaceStates(remote.workspace, localWorkspace),
+					nextReadings
+				)
+				const remoteFingerprint = getWorkspaceSnapshotFingerprint(remote.workspace, remote.readings)
+				const mergedFingerprint = getWorkspaceSnapshotFingerprint(nextWorkspace, nextReadings)
+				if (mergedFingerprint !== remoteFingerprint) {
+					const saved = await saveSharedWorkspaceSnapshot({
+						workspace: nextWorkspace,
+						readings: nextReadings,
+						knownRevision: remote.revision,
+					})
+					if (cancelled) return
+					if (saved) {
+						sharedRevisionRef.current = saved.revision
+						nextWorkspace = saved.workspace
+						nextReadings = saved.readings
+					}
+				}
+			} else {
+				const saved = await saveSharedWorkspaceSnapshot({
+					workspace: nextWorkspace,
+					readings: nextReadings,
+					knownRevision: sharedRevisionRef.current,
+				})
+				if (cancelled) return
+				if (saved) {
+					sharedRevisionRef.current = saved.revision
+					nextWorkspace = saved.workspace
+					nextReadings = saved.readings
+				}
 			}
-			saveWorkspaceState(initialWorkspace)
-		}
 
-		setWorkspace(initialWorkspace)
-		setActiveFileId(initialWorkspace.files[0]?.id ?? null)
+			const nextFingerprint = getWorkspaceSnapshotFingerprint(nextWorkspace, nextReadings)
+			workspaceRef.current = nextWorkspace
+			readingsRef.current = nextReadings
+			snapshotFingerprintRef.current = nextFingerprint
+			saveWorkspaceState(nextWorkspace)
+			saveReadings(nextReadings)
+			setReadings(nextReadings)
+			setWorkspace(nextWorkspace)
+			setActiveFileId(nextWorkspace.files[0]?.id ?? null)
 			setExpandedFolderIds({
 				[DEFAULT_READINGS_FOLDER_ID]: true,
 				[DEFAULT_SKETCHES_FOLDER_ID]: true,
 				'core-workspaces': true,
 			})
+		}
+
+		void initialize()
+
+		return () => {
+			cancelled = true
+		}
+	}, [])
+
+	useEffect(() => {
+		let cancelled = false
+		const poll = async () => {
+			const remote = await loadSharedWorkspaceSnapshot()
+			if (cancelled || !remote) return
+			if (remote.revision <= sharedRevisionRef.current) return
+			sharedRevisionRef.current = remote.revision
+			const nextWorkspace = ensureReadingFilesInWorkspace(remote.workspace, remote.readings)
+			const nextReadings = [...remote.readings]
+			const nextFingerprint = getWorkspaceSnapshotFingerprint(nextWorkspace, nextReadings)
+			if (nextFingerprint === snapshotFingerprintRef.current) return
+			snapshotFingerprintRef.current = nextFingerprint
+			workspaceRef.current = nextWorkspace
+			readingsRef.current = nextReadings
+			saveWorkspaceState(nextWorkspace)
+			saveReadings(nextReadings)
+			setWorkspace(nextWorkspace)
+			setReadings(nextReadings)
+			if (!nextWorkspace.files.some((file) => file.id === activeFileIdRef.current)) {
+				setActiveFileId(nextWorkspace.files[0]?.id ?? null)
+			}
+		}
+
+		const intervalId = window.setInterval(() => {
+			void poll()
+		}, SHARED_WORKSPACE_POLL_INTERVAL_MS)
+		return () => {
+			cancelled = true
+			window.clearInterval(intervalId)
+		}
 	}, [])
 
 	useEffect(() => {
@@ -235,10 +356,9 @@ function App() {
 	const updateWorkspace = useCallback((updater: (prev: WorkspaceState) => WorkspaceState) => {
 		setWorkspace((prev) => {
 			const next = updater(prev)
-			saveWorkspaceState(next)
-			return next
+			return persistSnapshot(next, readingsRef.current).workspace
 		})
-	}, [])
+	}, [persistSnapshot])
 
 	const folderById = useMemo(() => {
 		const map = new Map<string, WorkspaceFolder>()
@@ -350,28 +470,26 @@ function App() {
 			}
 
 			const reading = createReadingDocument(file.name, content)
-			setReadings((prev) => {
-				const next = [...prev, reading]
-				saveReadings(next)
-				return next
-			})
-
 			const readingFile = createReadingWorkspaceFile(reading, DEFAULT_READINGS_FOLDER_ID)
-			updateWorkspace((prev) => ({
-				...prev,
-				files: [...prev.files, readingFile],
-			}))
-				setExpandedFolderIds((prev) => ({ ...prev, [DEFAULT_READINGS_FOLDER_ID]: true }))
-				setSelectedFolderId(DEFAULT_READINGS_FOLDER_ID)
-				setActiveFileId(readingFile.id)
-				if (pdfUpload) {
-					const pdfUrl = `${URL.createObjectURL(file)}${PDF_URL_HASH}`
-					setReadingPdfUrls((prev) => ({ ...prev, [reading.id]: pdfUrl }))
-				}
-				event.target.value = ''
-			},
-			[updateWorkspace]
-		)
+			const nextReadings = [...readingsRef.current, reading]
+			const nextWorkspace = ensureReadingFilesInWorkspace({
+				...workspaceRef.current,
+				files: [...workspaceRef.current.files, readingFile],
+			}, nextReadings)
+			const persisted = persistSnapshot(nextWorkspace, nextReadings)
+			setReadings(persisted.readings)
+			setWorkspace(persisted.workspace)
+			setExpandedFolderIds((prev) => ({ ...prev, [DEFAULT_READINGS_FOLDER_ID]: true }))
+			setSelectedFolderId(DEFAULT_READINGS_FOLDER_ID)
+			setActiveFileId(readingFile.id)
+			if (pdfUpload) {
+				const pdfUrl = `${URL.createObjectURL(file)}${PDF_URL_HASH}`
+				setReadingPdfUrls((prev) => ({ ...prev, [reading.id]: pdfUrl }))
+			}
+			event.target.value = ''
+		},
+		[persistSnapshot]
+	)
 
 	const handleMapReading = useCallback(() => {
 		const agent = app?.agents.getAgent()

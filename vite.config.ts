@@ -12,5 +12,21 @@ export default defineConfig(() => {
 			cloudflare(),
 			react(),
 		],
+		resolve: {
+			dedupe: [
+				'react',
+				'react-dom',
+				'tldraw',
+				'@tldraw/utils',
+				'@tldraw/state',
+				'@tldraw/state-react',
+				'@tldraw/store',
+				'@tldraw/validate',
+				'@tldraw/tlschema',
+				'@tldraw/editor',
+				'@tldraw/sync',
+				'@tldraw/sync-core',
+			],
+		},
 	}
 })

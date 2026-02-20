@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BoxModel } from 'tldraw'
+import { BoxModel, createShapeId, TLShape, TLShapeId, toRichText } from 'tldraw'
+import { applyAiStyle, sanitizeShapeMeta } from '../deliberatorium/shapeMeta'
 import { TldrawAgent } from '../agent/TldrawAgent'
 
 interface AssemblyAiTurnMessage {
@@ -15,12 +16,19 @@ interface AssemblyAiTurnMessage {
 
 type AssemblyAiStatus = 'idle' | 'connecting' | 'listening' | 'reconnecting' | 'error'
 
+export type RealtimeMappingService = 'live-notecards' | 'question-flowers'
+
+interface UseAssemblyAiAgentNotecardsOptions {
+	service: RealtimeMappingService
+}
+
 interface UseAssemblyAiAgentNotecardsResult {
 	status: AssemblyAiStatus
 	isListening: boolean
 	error: string | null
 	liveTranscript: string
 	lastTurnSummary: string
+	activeQuestionLabel: string
 	start: () => Promise<void>
 	stop: () => void
 }
@@ -28,18 +36,36 @@ interface UseAssemblyAiAgentNotecardsResult {
 const CARD_WIDTH = 320
 const CARD_HEIGHT = 140
 const CARD_GAP = 24
+const QUESTION_WIDTH = 360
+const QUESTION_HEIGHT = 170
+const RESPONSE_WIDTH = 300
+const RESPONSE_HEIGHT = 140
+const FLOWER_EDGE_LABEL = 'responds to'
+
+interface ActiveQuestionFlower {
+	shapeId: TLShapeId
+	label: string
+	clusterCenter: { x: number; y: number }
+	responseCount: number
+	lastResponseShapeId: TLShapeId | null
+}
 
 export function useAssemblyAiAgentNotecards(
-	agent: TldrawAgent
+	agent: TldrawAgent,
+	options: UseAssemblyAiAgentNotecardsOptions
 ): UseAssemblyAiAgentNotecardsResult {
+	const { service } = options
 	const [status, setStatus] = useState<AssemblyAiStatus>('idle')
 	const [isListening, setIsListening] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	const [liveTranscript, setLiveTranscript] = useState('')
 	const [lastTurnSummary, setLastTurnSummary] = useState('')
+	const [activeQuestionLabel, setActiveQuestionLabel] = useState('')
 
 	const processedTurnIdsRef = useRef(new Set<string>())
 	const slotRef = useRef(0)
+	const questionSlotRef = useRef(0)
+	const activeQuestionRef = useRef<ActiveQuestionFlower | null>(null)
 	const wsRef = useRef<WebSocket | null>(null)
 	const mediaStreamRef = useRef<MediaStream | null>(null)
 	const audioContextRef = useRef<AudioContext | null>(null)
@@ -95,6 +121,28 @@ export function useAssemblyAiAgentNotecards(
 		setLiveTranscript('')
 	}, [clearAudioPipeline, clearSocket])
 
+	const getQuestionClusterCenter = useCallback(() => {
+		const viewport = agent.editor.getViewportPageBounds()
+		const horizontalMargin = Math.min(220, viewport.w * 0.25)
+		const verticalMargin = Math.min(200, viewport.h * 0.25)
+		const gapX = 500
+		const gapY = 420
+
+		const columns = Math.max(1, Math.floor((viewport.w - horizontalMargin * 2) / gapX))
+		const rows = Math.max(1, Math.floor((viewport.h - verticalMargin * 2) / gapY))
+		const slotsPerPage = columns * rows
+		const slot = questionSlotRef.current++
+		const wrappedSlot = slot % slotsPerPage
+		const page = Math.floor(slot / slotsPerPage)
+		const column = wrappedSlot % columns
+		const row = Math.floor(wrappedSlot / columns)
+
+		return {
+			x: viewport.minX + horizontalMargin + column * gapX + page * 60,
+			y: viewport.minY + verticalMargin + row * gapY + page * 50,
+		}
+	}, [agent.editor])
+
 	const getPlacementBounds = useCallback((): BoxModel => {
 		const viewport = agent.editor.getViewportPageBounds()
 		const cardsPerColumn = Math.max(1, Math.floor((viewport.h - CARD_GAP * 2) / (CARD_HEIGHT + CARD_GAP)))
@@ -112,6 +160,205 @@ export function useAssemblyAiAgentNotecards(
 			h: CARD_HEIGHT + 32,
 		}
 	}, [agent.editor])
+
+	const getCurrentQuestionCenter = useCallback(
+		(activeQuestion: ActiveQuestionFlower) => {
+			const shape = agent.editor.getShape(activeQuestion.shapeId)
+			if (!shape) return activeQuestion.clusterCenter
+			const bounds = agent.editor.getShapePageBounds(shape)
+			if (!bounds) return activeQuestion.clusterCenter
+			return { x: bounds.center.x, y: bounds.center.y }
+		},
+		[agent.editor]
+	)
+
+	const placeQuestionFlowerQuestion = useCallback(
+		(turn: AssemblyAiTurnMessage) => {
+			const transcript = turn.transcript?.trim()
+			if (!transcript) return
+
+			const speakerLabel = turn.speaker ?? turn.speaker_id ?? 'Speaker'
+			const center = getQuestionClusterCenter()
+			const questionLabel = formatQuestionLabel(transcript)
+			const questionNote = truncateText(
+				`${speakerLabel} asked: ${normalizeText(transcript)}`,
+				220
+			)
+			const questionId = createShapeId()
+
+			const questionShape = applyAiStyle({
+				id: questionId,
+				type: 'geo',
+				x: center.x - QUESTION_WIDTH / 2,
+				y: center.y - QUESTION_HEIGHT / 2,
+				props: {
+					geo: 'ellipse',
+					w: QUESTION_WIDTH,
+					h: QUESTION_HEIGHT,
+					dash: 'draw',
+					color: 'yellow',
+					fill: 'solid',
+					size: 's',
+					font: 'draw',
+					align: 'middle',
+					verticalAlign: 'middle',
+					richText: toRichText(questionLabel),
+				},
+				meta: sanitizeShapeMeta({
+					note: questionNote,
+					kind: 'concept-node',
+					nodeRole: 'question',
+				}),
+			} as TLShape)
+
+			agent.editor.store.mergeRemoteChanges(() => {
+				agent.editor.createShape(questionShape)
+			})
+
+			activeQuestionRef.current = {
+				shapeId: questionId,
+				label: questionLabel,
+				clusterCenter: center,
+				responseCount: 0,
+				lastResponseShapeId: null,
+			}
+			setActiveQuestionLabel(questionLabel)
+			setLastTurnSummary(`Question (${speakerLabel}): ${questionLabel}`)
+		},
+		[agent.editor, getQuestionClusterCenter]
+	)
+
+	const placeQuestionFlowerResponse = useCallback(
+		(turn: AssemblyAiTurnMessage) => {
+			const transcript = turn.transcript?.trim()
+			if (!transcript) return
+
+			const activeQuestion = activeQuestionRef.current
+			if (!activeQuestion) {
+				const speakerLabel = turn.speaker ?? turn.speaker_id ?? 'Speaker'
+				setLastTurnSummary(`Waiting for a question node before mapping responses. (${speakerLabel})`)
+				return
+			}
+
+			const questionShape = agent.editor.getShape(activeQuestion.shapeId)
+			if (!questionShape) {
+				activeQuestionRef.current = null
+				setActiveQuestionLabel('')
+				setLastTurnSummary('Active question was removed. Waiting for a new question.')
+				return
+			}
+
+			const speakerLabel = turn.speaker ?? turn.speaker_id ?? 'Speaker'
+			const responseIndex = activeQuestion.responseCount
+			activeQuestion.responseCount += 1
+
+			const questionCenter = getCurrentQuestionCenter(activeQuestion)
+			const responseCenter = getFlowerResponseCenter(questionCenter, responseIndex)
+
+			const responseLabel = truncateText(
+				`${speakerLabel}: ${normalizeText(transcript)}`,
+				120
+			)
+			const responseNote = truncateText(normalizeText(transcript), 220)
+			const responseShapeId = createShapeId()
+			const primaryEdgeId = createShapeId()
+
+			const responseShape = applyAiStyle({
+				id: responseShapeId,
+				type: 'geo',
+				x: responseCenter.x - RESPONSE_WIDTH / 2,
+				y: responseCenter.y - RESPONSE_HEIGHT / 2,
+				props: {
+					geo: 'rectangle',
+					w: RESPONSE_WIDTH,
+					h: RESPONSE_HEIGHT,
+					dash: 'draw',
+					color: 'yellow',
+					fill: 'solid',
+					size: 's',
+					font: 'draw',
+					align: 'middle',
+					verticalAlign: 'middle',
+					richText: toRichText(responseLabel),
+				},
+				meta: sanitizeShapeMeta({
+					note: responseNote,
+					kind: 'concept-node',
+					nodeRole: 'response',
+					questionShapeId: activeQuestion.shapeId,
+				}),
+			} as TLShape)
+
+			const edgeShapes: TLShape[] = [
+				createResponseEdgeShape({
+					shapeId: primaryEdgeId,
+					start: responseCenter,
+					end: questionCenter,
+					fromShapeId: responseShapeId,
+					toShapeId: activeQuestion.shapeId,
+					label: FLOWER_EDGE_LABEL,
+					nodeRole: 'response-to-question',
+				}),
+			]
+
+			const previousResponseId = activeQuestion.lastResponseShapeId
+			if (previousResponseId && isLikelyReplyToPreviousResponse(transcript)) {
+				const previousResponseShape = agent.editor.getShape(previousResponseId)
+				const previousResponseBounds = previousResponseShape
+					? agent.editor.getShapePageBounds(previousResponseShape)
+					: null
+				if (previousResponseBounds) {
+					const chainEdgeId = createShapeId()
+					edgeShapes.push(
+						createResponseEdgeShape({
+							shapeId: chainEdgeId,
+							start: responseCenter,
+							end: {
+								x: previousResponseBounds.center.x,
+								y: previousResponseBounds.center.y,
+							},
+							fromShapeId: responseShapeId,
+							toShapeId: previousResponseId,
+							label: 'builds on',
+							nodeRole: 'response-to-response',
+						})
+					)
+				}
+			}
+
+			agent.editor.store.mergeRemoteChanges(() => {
+				agent.editor.createShape(responseShape)
+				agent.editor.createShapes(edgeShapes)
+			})
+
+			activeQuestion.lastResponseShapeId = responseShapeId
+			setLastTurnSummary(`Response (${speakerLabel}) mapped to: ${activeQuestion.label}`)
+		},
+		[agent.editor, getCurrentQuestionCenter]
+	)
+
+	const queueTurnAsQuestionFlower = useCallback(
+		(turn: AssemblyAiTurnMessage) => {
+			const transcript = turn.transcript?.trim()
+			if (!transcript) return
+
+			const turnId =
+				turn.id ??
+				(typeof turn.turn_order === 'number'
+					? `turn-${turn.turn_order}`
+					: `turn-${Date.now()}-${transcript.slice(0, 20)}`)
+
+			if (processedTurnIdsRef.current.has(turnId)) return
+			processedTurnIdsRef.current.add(turnId)
+
+			if (isQuestionTranscript(transcript)) {
+				placeQuestionFlowerQuestion(turn)
+				return
+			}
+			placeQuestionFlowerResponse(turn)
+		},
+		[placeQuestionFlowerQuestion, placeQuestionFlowerResponse]
+	)
 
 	const queueTurnAsNotecard = useCallback(
 		(turn: AssemblyAiTurnMessage) => {
@@ -169,13 +416,17 @@ export function useAssemblyAiAgentNotecards(
 			if (message.type === 'Turn' && typeof message.transcript === 'string') {
 				if (message.end_of_turn || message.turn_is_formatted) {
 					setLiveTranscript('')
-					queueTurnAsNotecard(message)
+					if (service === 'question-flowers') {
+						queueTurnAsQuestionFlower(message)
+					} else {
+						queueTurnAsNotecard(message)
+					}
 				} else {
 					setLiveTranscript(message.transcript)
 				}
 			}
 		},
-		[queueTurnAsNotecard]
+		[queueTurnAsNotecard, queueTurnAsQuestionFlower, service]
 	)
 
 	const connect = useCallback(
@@ -289,7 +540,103 @@ export function useAssemblyAiAgentNotecards(
 		error,
 		liveTranscript,
 		lastTurnSummary,
+		activeQuestionLabel,
 		start,
 		stop,
 	}
+}
+
+function normalizeText(text: string): string {
+	return text.replace(/\s+/g, ' ').trim()
+}
+
+function truncateText(text: string, maxChars: number): string {
+	if (text.length <= maxChars) return text
+	const safeMax = Math.max(4, maxChars)
+	return `${text.slice(0, safeMax - 3).trimEnd()}...`
+}
+
+function formatQuestionLabel(transcript: string): string {
+	const compact = normalizeText(transcript)
+	const label = compact.endsWith('?') ? compact : `${compact}?`
+	return truncateText(label, 120)
+}
+
+function isQuestionTranscript(transcript: string): boolean {
+	const compact = normalizeText(transcript)
+	if (!compact) return false
+	if (compact.includes('?')) return true
+
+	const lowered = compact.toLowerCase()
+	return /^(who|what|when|where|why|how|is|are|am|do|does|did|can|could|should|would|will|might|may|which)\b/.test(
+		lowered
+	)
+}
+
+function getFlowerResponseCenter(questionCenter: { x: number; y: number }, responseIndex: number) {
+	const petalsPerRing = 6
+	const ring = Math.floor(responseIndex / petalsPerRing)
+	const ringIndex = responseIndex % petalsPerRing
+	const angle = (ringIndex / petalsPerRing) * Math.PI * 2 - Math.PI / 2
+	const radius = 190 + ring * 110
+	return {
+		x: questionCenter.x + Math.cos(angle) * radius,
+		y: questionCenter.y + Math.sin(angle) * radius,
+	}
+}
+
+function isLikelyReplyToPreviousResponse(transcript: string): boolean {
+	const lowered = normalizeText(transcript).toLowerCase()
+	return /\b(i agree|i disagree|building on|to your point|responding to|in response|that point|following up|as you said|you said)\b/.test(
+		lowered
+	)
+}
+
+function createResponseEdgeShape({
+	shapeId,
+	start,
+	end,
+	fromShapeId,
+	toShapeId,
+	label,
+	nodeRole,
+}: {
+	shapeId: TLShapeId
+	start: { x: number; y: number }
+	end: { x: number; y: number }
+	fromShapeId: TLShapeId
+	toShapeId: TLShapeId
+	label: string
+	nodeRole: 'response-to-question' | 'response-to-response'
+}) {
+	const x = Math.min(start.x, end.x)
+	const y = Math.min(start.y, end.y)
+
+	return applyAiStyle({
+		id: shapeId,
+		type: 'arrow',
+		x,
+		y,
+		props: {
+			start: { x: start.x - x, y: start.y - y },
+			end: { x: end.x - x, y: end.y - y },
+			arrowheadStart: 'none',
+			arrowheadEnd: 'arrow',
+			bend: 0,
+			dash: 'draw',
+			color: 'yellow',
+			labelColor: 'yellow',
+			fill: 'none',
+			font: 'draw',
+			size: 's',
+			richText: toRichText(label),
+		},
+		meta: sanitizeShapeMeta({
+			note: label,
+			kind: 'relationship-edge',
+			nodeRole,
+			fromShapeId,
+			toShapeId,
+		}),
+	} as TLShape)
 }
